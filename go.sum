@@ -66,8 +66,8 @@ github.com/mattn/go-sqlite3 v1.14.22 h1:2gZY6PC6kBnID23Tichd1K+Z0oS6nE/XwU+Vz/5o
 github.com/mattn/go-sqlite3 v1.14.22/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
 github.com/ncruces/go-strftime v0.1.9 h1:bY0MQC28UADQmHmaF5dgpLmImcShSi2kHU9XLdhx/f4=
 github.com/ncruces/go-strftime v0.1.9/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
-github.com/netsys-lab/scionproto-scion v0.0.0-20240923205244-bcce693e1e10 h1:iZKljUgF8LOTUmiUnn4OvkvhD1E8M/s5lJAVV0XrL8o=
-github.com/netsys-lab/scionproto-scion v0.0.0-20240923205244-bcce693e1e10/go.mod h1:szDoN+FKnSMVMdxaRaSpLKIuuALr+6AdyGRp2YOf0b0=
+github.com/netsys-lab/scionproto-scion v0.0.0-20241004155440-d23ca92d8bea h1:0dnST7erLSrikkyWVP+Gsxzn7JZcGW9lZCOUUgwttJE=
+github.com/netsys-lab/scionproto-scion v0.0.0-20241004155440-d23ca92d8bea/go.mod h1:ukPev+kZLlzTkYZb98uDbIYey6aA0pwSTgtdO5JEnYM=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/opentracing/opentracing-go v1.2.0 h1:uEJPy/1a5RIPAJ0Ov+OIO8OxWu77jEv+1B0VhjKrZUs=
 github.com/opentracing/opentracing-go v1.2.0/go.mod h1:GxEUsuufX4nBwe+T+Wl9TAgYrxe9dPLANfrWvHYVTgc=

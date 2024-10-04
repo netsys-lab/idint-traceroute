@@ -76,7 +76,7 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		s.pktMeta.ingressTS = time.Now()
 
-		if _, ok := pkt.PacketInfo.Telemetry.(*snet.RawIntReport); ok {
+		if pkt.PacketInfo.Telemetry.Report != nil {
 			response, err := s.respond(ctx, pkt)
 			if err != nil {
 				fmt.Printf("Packet processing failed: %v\n", err)
@@ -107,7 +107,7 @@ func (s *Server) respond(ctx context.Context, pkt *snet.Packet) (*snet.Packet, e
 	}
 
 	// Put ID-INT header in payload of the response
-	telemetry := pkt.PacketInfo.Telemetry.(*snet.RawIntReport)
+	telemetry := pkt.PacketInfo.Telemetry.Report
 	payload := make([]byte, telemetry.SerializedLength())
 	payloadLen, err := telemetry.SerializeToSlice(payload)
 	if err != nil {
@@ -117,7 +117,6 @@ func (s *Server) respond(ctx context.Context, pkt *snet.Packet) (*snet.Packet, e
 	// Key for source metadata in response packet
 	validity := time.Now()
 	key, err := s.getResponseKey(ctx, validity, pkt.PacketInfo.Source)
-	fmt.Printf("Server key: %v", key[:])
 	if err != nil {
 		return nil, serrors.WrapStr("getting host-host key", err)
 	}
@@ -141,7 +140,7 @@ func (s *Server) respond(ctx context.Context, pkt *snet.Packet) (*snet.Packet, e
 				DstPort: udp.SrcPort,
 				Payload: payload[:payloadLen],
 			},
-			Telemetry: &request,
+			Telemetry: snet.IdIntInfo{Request: &request},
 		},
 	}, nil
 }

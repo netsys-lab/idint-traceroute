@@ -48,4 +48,4 @@ require (
 	modernc.org/token v1.1.0 // indirect
 )
 
-replace github.com/scionproto/scion => github.com/netsys-lab/scionproto-scion v0.0.0-20240923205244-bcce693e1e10
+replace github.com/scionproto/scion => github.com/netsys-lab/scionproto-scion v0.0.0-20241004155440-d23ca92d8bea

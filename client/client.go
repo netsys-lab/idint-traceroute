@@ -141,7 +141,7 @@ func (c *Client) sendProbe(ctx context.Context, via snet.Path) error {
 		IA:   c.KeyCache.DstIA,
 		Host: addr.HostIP(c.KeyCache.DstHost),
 	}
-	key, err := c.KeyCache.GetHostHostKey(ctx, validity, self)
+	key, err := c.KeyCache.GetHostHostKey(ctx, validity, self, self)
 	if err != nil {
 		return serrors.WrapStr("getting host-host key", err)
 	}
@@ -175,7 +175,7 @@ func (c *Client) sendProbe(ctx context.Context, via snet.Path) error {
 				DstPort: c.Remote.Host.AddrPort().Port(),
 				Payload: payload,
 			},
-			Telemetry: &snet.IntRequest{
+			Telemetry: snet.IdIntInfo{Request: &snet.IntRequest{
 				Encrypt:         c.Config.Encrypt,
 				SkipHops:        c.Config.SkipHops,
 				MaxStackLen:     maxStackLen,
@@ -190,7 +190,7 @@ func (c *Client) sendProbe(ctx context.Context, via snet.Path) error {
 				SourceMetadata:  snet.IntHop{},
 				SourceTS:        validity,
 				SourceKey:       key,
-			},
+			}},
 		},
 	}
 
@@ -208,7 +208,7 @@ func (c *Client) receiveResponse(ctx context.Context, via snet.Path) error {
 		return err
 	}
 
-	if _, ok := pkt.PacketInfo.Telemetry.(*snet.RawIntReport); !ok {
+	if pkt.PacketInfo.Telemetry.Report == nil {
 		return serrors.New("response does not contain ID-INT")
 	}
 
@@ -248,7 +248,7 @@ func (c *Client) decodeProbe(
 	}
 
 	// Parse and validate ID-INT report from header
-	rawRev := pkt.PacketInfo.Telemetry.(*snet.RawIntReport)
+	rawRev := pkt.PacketInfo.Telemetry.Report
 	rev := &snet.IntReport{}
 	if c.Config.NoVerify {
 		err = rawRev.DecodeUnverified(rev)
