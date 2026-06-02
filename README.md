@@ -2,7 +2,7 @@ ID-INT Debug/Traceroute Tool
 ============================
 
 This tool sends an empty UDP packet with an ID-INT header from a client to a server. The server
-responds with a UDP packet cotaining a fresh ID-INT header and the original ID-INT header from the
+responds with a UDP packet containing a fresh ID-INT header and the original ID-INT header from the
 client as payload.
 
 Example output:

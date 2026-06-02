@@ -33,7 +33,9 @@ import (
 	"github.com/scionproto/scion/pkg/daemon"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/slayers"
+	scion "github.com/scionproto/scion/pkg/slayers/path/scion"
 	"github.com/scionproto/scion/pkg/snet"
+	spath "github.com/scionproto/scion/pkg/snet/path"
 )
 
 type DerivedMetric interface {
@@ -401,20 +403,63 @@ func (c *Client) printTelemetry(report *snet.IntReport, hopToIA snet.HopToIA, fw
 	}
 }
 
+func hopfieldToInterfaceIdx(path snet.Path) func(uint) uint {
+	// Mapping the hop field index back to an interface in the SNET path
+	// metadata requires knowing the number and length of path segments. The
+	// reason is that that one holp field covers two interfaces, except at the
+	// very first and last hop, and at the splicing point between two segments
+	// where one hop field covers only a single interface as defined in the SNET
+	// interface metadata.
+	// Here we obtain the segment length by parsing the info header of the raw
+	// SCION path. Unfortunately, this means that the code needs to distinguish
+	// between different path types. Currently only standard SCION paths are
+	// implemented.
+	// TODO: Make sure this works with peering shortcuts as well.
+	var raw scion.Raw
+	rp, ok := path.Dataplane().(spath.SCION)
+	if !ok {
+		panic("can't deal with non-SCION paths")
+	}
+	if err := raw.DecodeFromBytes(rp.Raw); err != nil {
+		panic(err)
+	}
+	segLenSum := [3]uint{
+		uint(raw.PathMeta.SegLen[0]),
+		uint(raw.PathMeta.SegLen[0] + raw.PathMeta.SegLen[1]),
+		uint(raw.PathMeta.SegLen[0] + raw.PathMeta.SegLen[1] + raw.PathMeta.SegLen[2]),
+	}
+	return func(i uint) uint {
+		if i > 0 {
+			if i < segLenSum[0] {
+				return 2*i - 1
+			} else if i < segLenSum[1] {
+				return 2*i - 3
+			} else {
+				return 2*i - 5
+			}
+		}
+		return 0
+	}
+}
+
 func fwdPathMeta(path snet.Path) snet.HopToIA {
+	hfToIface := hopfieldToInterfaceIdx(path)
 	return func(i uint) (addr.IA, error) {
-		if i < uint(len(path.Metadata().Interfaces)) {
-			return path.Metadata().Interfaces[i].IA, nil
+		j := hfToIface(i)
+		if j < uint(len(path.Metadata().Interfaces)) {
+			return path.Metadata().Interfaces[j].IA, nil
 		}
 		return 0, serrors.New("hop index out of range")
 	}
 }
 
 func revPathMeta(path snet.Path) snet.HopToIA {
+	hfToIface := hopfieldToInterfaceIdx(path)
 	return func(i uint) (addr.IA, error) {
+		j := hfToIface(i)
 		length := uint(len(path.Metadata().Interfaces))
-		if i < length {
-			return path.Metadata().Interfaces[length-i-1].IA, nil
+		if j < length {
+			return path.Metadata().Interfaces[length-j-1].IA, nil
 		}
 		return 0, serrors.New("hop index out of range")
 	}
@@ -494,6 +539,9 @@ func fmtMetaValue(instr uint8, value uint64) string {
 		fallthrough
 	case slayers.IdIntIEgressLinkTx:
 		return fmt.Sprintf("%13.2f%%", 100.0*float64(value)/float64(^uint32(0)))
+
+	case slayers.IdIntIAsn:
+		return fmt.Sprintf("%14v", addr.AS(value))
 
 	default:
 		return fmt.Sprintf("%14v", value)
