@@ -403,36 +403,53 @@ func (c *Client) printTelemetry(report *snet.IntReport, hopToIA snet.HopToIA, fw
 	}
 }
 
-func hopfieldToInterfaceIdx(path snet.Path) func(uint) uint {
+func hopfieldToInterfaceIdx(path snet.Path, reverse bool) func(uint) uint {
 	// Mapping the hop field index back to an interface in the SNET path
 	// metadata requires knowing the number and length of path segments. The
 	// reason is that that one holp field covers two interfaces, except at the
 	// very first and last hop, and at the splicing point between two segments
 	// where one hop field covers only a single interface as defined in the SNET
 	// interface metadata.
-	// Here we obtain the segment length by parsing the info header of the raw
-	// SCION path. Unfortunately, this means that the code needs to distinguish
-	// between different path types. Currently only standard SCION paths are
-	// implemented.
-	// TODO: Make sure this works with peering shortcuts as well.
-	var raw scion.Raw
+	var d scion.Decoded
 	rp, ok := path.Dataplane().(spath.SCION)
 	if !ok {
 		panic("can't deal with non-SCION paths")
 	}
-	if err := raw.DecodeFromBytes(rp.Raw); err != nil {
+	if err := d.DecodeFromBytes(rp.Raw); err != nil {
 		panic(err)
 	}
-	segLenSum := [3]uint{
-		uint(raw.PathMeta.SegLen[0]),
-		uint(raw.PathMeta.SegLen[0] + raw.PathMeta.SegLen[1]),
-		uint(raw.PathMeta.SegLen[0] + raw.PathMeta.SegLen[1] + raw.PathMeta.SegLen[2]),
+
+	if reverse {
+		// Reverse segment length and info fields
+		// No need to do a full reverse, as we don't need the hop fields
+		if d.PathMeta.SegLen[2] > 0 {
+			d.PathMeta.SegLen[0], d.PathMeta.SegLen[2] = d.PathMeta.SegLen[2], d.PathMeta.SegLen[0]
+			d.InfoFields[0], d.InfoFields[2] = d.InfoFields[2], d.InfoFields[0]
+		} else if d.PathMeta.SegLen[1] > 0 {
+			d.PathMeta.SegLen[0], d.PathMeta.SegLen[1] = d.PathMeta.SegLen[1], d.PathMeta.SegLen[0]
+			d.InfoFields[0], d.InfoFields[1] = d.InfoFields[1], d.InfoFields[0]
+		}
 	}
+
+	// Hop field indices at which a segment change occurs
+	segChange := [3]uint{
+		uint(d.PathMeta.SegLen[0]), uint(d.PathMeta.SegLen[1]), uint(d.PathMeta.SegLen[2]),
+	}
+	segChange[1] = segChange[0] + segChange[1]
+	segChange[2] = segChange[1] + segChange[2]
+
+	// Special case: Ignore peering crossover as those have one hop field less
+	for i := range d.NumINF - 1 {
+		if d.InfoFields[i].Peer {
+			segChange[i] = segChange[i+1]
+		}
+	}
+
 	return func(i uint) uint {
 		if i > 0 {
-			if i < segLenSum[0] {
+			if i < segChange[0] {
 				return 2*i - 1
-			} else if i < segLenSum[1] {
+			} else if i < segChange[1] {
 				return 2*i - 3
 			} else {
 				return 2*i - 5
@@ -443,7 +460,7 @@ func hopfieldToInterfaceIdx(path snet.Path) func(uint) uint {
 }
 
 func fwdPathMeta(path snet.Path) snet.HopToIA {
-	hfToIface := hopfieldToInterfaceIdx(path)
+	hfToIface := hopfieldToInterfaceIdx(path, false)
 	return func(i uint) (addr.IA, error) {
 		j := hfToIface(i)
 		if j < uint(len(path.Metadata().Interfaces)) {
@@ -454,7 +471,7 @@ func fwdPathMeta(path snet.Path) snet.HopToIA {
 }
 
 func revPathMeta(path snet.Path) snet.HopToIA {
-	hfToIface := hopfieldToInterfaceIdx(path)
+	hfToIface := hopfieldToInterfaceIdx(path, true)
 	return func(i uint) (addr.IA, error) {
 		j := hfToIface(i)
 		length := uint(len(path.Metadata().Interfaces))
