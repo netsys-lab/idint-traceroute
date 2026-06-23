@@ -28,6 +28,7 @@ import (
 	"github.com/scionproto/scion/pkg/daemon"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/slayers"
+	"github.com/scionproto/scion/pkg/slayers/idint"
 	"github.com/scionproto/scion/pkg/snet"
 )
 
@@ -82,8 +83,8 @@ func parseArgs() bool {
 		remote       string
 		reqNodeId    bool
 		reqNodeCount bool
-		reqIngressIf bool
-		reqEgressIf  bool
+		reqIgrPort   bool
+		reqEgrPort   bool
 		aggrf        [4]string
 		instr        [4]string
 		latency      bool
@@ -105,9 +106,9 @@ func parseArgs() bool {
 	flag.IntVar(&clientCfg.MaxStackLen, "lim", 0, "Maximum telemetry stack length per direction")
 	flag.BoolVar(&reqNodeId, "nid", false, "Request node ID")
 	flag.BoolVar(&reqNodeCount, "nc", false, "Request node count")
-	flag.BoolVar(&reqIngressIf, "igr", false, "Request ingress interface ID")
-	flag.BoolVar(&reqEgressIf, "egr", false, "Request egress interface ID")
-	flag.IntVar(&clientCfg.AggregationMode, "aggr", slayers.IdIntAgrOff, "Aggregation mode (0-3)")
+	flag.BoolVar(&reqIgrPort, "igr", false, "Request ingress port ID")
+	flag.BoolVar(&reqEgrPort, "egr", false, "Request egress port ID")
+	flag.IntVar(&clientCfg.AggregationMode, "aggr", idint.AgOff, "Aggregation mode (0-3)")
 	flag.StringVar(&aggrf[0], "af0", "last", "Aggregation function for first instruction")
 	flag.StringVar(&aggrf[1], "af1", "last", "Aggregation function for second instruction")
 	flag.StringVar(&aggrf[2], "af2", "last", "Aggregation function for third instruction")
@@ -123,16 +124,16 @@ func parseArgs() bool {
 	flag.Parse()
 
 	if reqNodeId {
-		clientCfg.ReqBitmap |= int(slayers.IdIntNodeId)
+		clientCfg.ReqBitmap |= int(idint.NodeId)
 	}
 	if reqNodeCount {
-		clientCfg.ReqBitmap |= int(slayers.IdIntNodeCnt)
+		clientCfg.ReqBitmap |= int(idint.NodeCnt)
 	}
-	if reqIngressIf {
-		clientCfg.ReqBitmap |= int(slayers.IdIntIgrIf)
+	if reqIgrPort {
+		clientCfg.ReqBitmap |= int(idint.IgPort)
 	}
-	if reqEgressIf {
-		clientCfg.ReqBitmap |= int(slayers.IdIntEgrIf)
+	if reqEgrPort {
+		clientCfg.ReqBitmap |= int(idint.EgPort)
 	}
 	for i := 0; i < 4; i++ {
 		clientCfg.AggregationFunc[i], err = parseAggrFunc(aggrf[i])
@@ -197,7 +198,7 @@ func parseAggrFunc(raw string) (uint8, error) {
 }
 
 func parseInstruction(raw string) (uint8, error) {
-	if val, ok := shared.InstructionValue[raw]; ok {
+	if val, ok := shared.InstructionValue[strings.ToLower(raw)]; ok {
 		return val, nil
 	} else {
 		return 0, serrors.New("unknown ID-INT instruction", "raw", raw)
@@ -208,24 +209,29 @@ func connectToNetwork(ctx context.Context) (*shared.Network, error) {
 	var err error
 
 	// Daemon
-	sciond, err := daemon.Service{
-		Address: sciondAddr,
-	}.Connect(ctx)
+	sciond, err := daemon.NewService(sciondAddr).Connect(ctx)
 	if err != nil {
-		fmt.Printf("cannot connect to deamon %s\n", sciondAddr)
+		fmt.Printf("cannot connect to daemon %s\n", sciondAddr)
 		return nil, err
 	}
 
 	// Get local IA
 	localIA, err := sciond.LocalIA(ctx)
 	if err != nil {
-		fmt.Println("SCION deamon communication failed")
+		fmt.Println("SCION daemon communication failed")
+		return nil, err
+	}
+
+	// Load Topology
+	topo, err := daemon.LoadTopology(ctx, sciond)
+	if err != nil {
+		fmt.Println("loading topology failed")
 		return nil, err
 	}
 
 	return &shared.Network{
 		Snet: snet.SCIONNetwork{
-			Topology:    sciond,
+			Topology:    topo,
 			SCMPHandler: SCMPHandler{},
 		},
 		Sciond:  sciond,

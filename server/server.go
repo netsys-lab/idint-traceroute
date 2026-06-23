@@ -28,6 +28,7 @@ import (
 	"github.com/scionproto/scion/pkg/drkey"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/slayers"
+	"github.com/scionproto/scion/pkg/slayers/idint"
 	"github.com/scionproto/scion/pkg/snet"
 )
 
@@ -63,7 +64,7 @@ func (s *Server) Run(ctx context.Context) error {
 	var err error
 	s.conn, err = s.Network.Snet.OpenRaw(ctx, &localUdpAddr)
 	if err != nil {
-		return serrors.WrapStr("connection failed", err)
+		return serrors.Wrap("connection failed", err)
 	}
 	defer s.conn.Close()
 	fmt.Printf("Listening on %s,%s\n", s.Network.LocalIA, s.conn.LocalAddr())
@@ -108,25 +109,25 @@ func (s *Server) respond(ctx context.Context, pkt *snet.Packet) (*snet.Packet, e
 
 	// Put ID-INT header in payload of the response
 	telemetry := pkt.PacketInfo.Telemetry.Report
-	payload := make([]byte, telemetry.SerializedLength())
+	payload := make([]byte, telemetry.SerializeToSliceLength())
 	payloadLen, err := telemetry.SerializeToSlice(payload)
 	if err != nil {
-		return nil, serrors.WrapStr("serializing ID-INT", err)
+		return nil, serrors.Wrap("serializing ID-INT", err)
 	}
 
 	// Key for source metadata in response packet
 	validity := time.Now()
 	key, err := s.getResponseKey(ctx, validity, pkt.PacketInfo.Source)
 	if err != nil {
-		return nil, serrors.WrapStr("getting host-host key", err)
+		return nil, serrors.Wrap("getting host-host key", err)
 	}
 
 	var request snet.IntRequest
 	telemetry.RecoverRequest(&request)
-	request.Verifier = slayers.IdIntVerifDst
-	request.SourceMetadata = snet.IntHop{}
+	request.Verifier = idint.VfDst
+	request.SourceMetadata = snet.IntMetadata{}
 	request.SourceTS = validity
-	request.SourceKey = key
+	request.SourceKey = (slayers.IdIntKey)(key)
 	s.setSourceMetadata(request.Instructions, &request.SourceMetadata)
 
 	return &snet.Packet{
@@ -156,7 +157,7 @@ func (s *Server) getResponseKey(
 	}
 
 	key, ok := s.keyCache[dstAddr]
-	if ok && key.Epoch.Validity.Contains(validity) {
+	if ok && key.Epoch.Contains(validity) {
 		return key.Key, nil
 	}
 
@@ -177,78 +178,62 @@ func (s *Server) getResponseKey(
 	return key.Key, nil
 }
 
-func (s *Server) setSourceMetadata(instr [4]uint8, meta *snet.IntHop) {
+func (s *Server) setSourceMetadata(instr [4]uint8, meta *snet.IntMetadata) {
 	for i := 0; i < 4; i++ {
 		switch instr[i] {
-		case slayers.IdIntIZero2:
-			meta.SetDataUint16(i, 0)
-		case slayers.IdIntIIsd:
+		case idint.InIsd:
 			meta.SetDataUint16(i, uint16(s.Network.LocalIA.ISD()))
-		case slayers.IdIntIBrLinkType:
+		case idint.InBrLinkType:
 			meta.SetDataUint16(i, 0)
-		case slayers.IdIntIDeviceTypeRole:
+		case idint.InDeviceTypeRole:
 			meta.SetDataUint16(i, 0)
-		case slayers.IdIntICpuMemUsage:
+		case idint.InCpuMemUsage:
 			meta.SetDataUint16(i, 0)
-		case slayers.IdIntICpuTemp:
+		case idint.InCpuTemp:
 			meta.SetDataUint16(i, 0)
-		case slayers.IdIntIAsicTemp:
+		case idint.InAsicTemp:
 			meta.SetDataUint16(i, 0)
-		case slayers.IdIntIFanSpeed:
+		case idint.InFanSpeed:
 			meta.SetDataUint16(i, 0)
-		case slayers.IdIntITotalPower:
+		case idint.InTotalPower:
 			meta.SetDataUint16(i, 0)
-		case slayers.IdIntIEnergyMix:
+		case idint.InEnergyMix:
 			meta.SetDataUint16(i, 0)
-		case slayers.IdIntIZero4:
+		case idint.InDeviceVendor:
 			meta.SetDataUint32(i, 0)
-		case slayers.IdIntIDeviceVendor:
+		case idint.InDeviceModel:
 			meta.SetDataUint32(i, 0)
-		case slayers.IdIntIDeviceModel:
+		case idint.InSoftwareVersion:
 			meta.SetDataUint32(i, 0)
-		case slayers.IdIntISoftwareVersion:
-			meta.SetDataUint32(i, 0)
-		case slayers.IdIntINodeIpv4Addr:
+		case idint.InNodeIpv4Addr:
 			meta.SetDataUint32(i, binary.BigEndian.Uint32(s.Local.Addr().AsSlice()))
-		case slayers.IdIntIIngressIfSpeed:
+		case idint.InIngressPortSpeed:
 			meta.SetDataUint32(i, 1000) // 1 Gbit/s
-		case slayers.IdIntIEgressIfSpeed:
+		case idint.InEgressPortSpeed:
 			meta.SetDataUint32(i, 1000) // 1 Gbit/s
-		case slayers.IdIntIGpsLat:
+		case idint.InGpsLat:
 			meta.SetDataUint32(i, math.Float32bits(52.138965))
-		case slayers.IdIntIGpsLong:
+		case idint.InGpsLong:
 			meta.SetDataUint32(i, math.Float32bits(11.646005))
-		case slayers.IdIntIUptime:
+		case idint.InUptime:
 			meta.SetDataUint32(i, uint32(time.Since(s.metrics.startTime).Seconds()))
-		case slayers.IdIntIFwdEnergy:
+		case idint.InIngressLinkRx:
 			meta.SetDataUint32(i, 0)
-		case slayers.IdIntICo2Emission:
+		case idint.InEgressLinkTx:
 			meta.SetDataUint32(i, 0)
-		case slayers.IdIntIIngressLinkRx:
-			meta.SetDataUint32(i, 0)
-		case slayers.IdIntIEgressLinkTx:
-			meta.SetDataUint32(i, 0)
-		case slayers.IdIntIZero6:
-			meta.SetDataUint48(i, 0)
-		case slayers.IdIntIAsn:
+		case idint.InAsn:
 			meta.SetDataUint48(i, uint64(s.Network.LocalIA.AS()))
-		case slayers.IdIntIIngressTstamp:
+		case idint.InIngressTstamp:
 			meta.SetDataUint48(i, uint64(s.pktMeta.ingressTS.UnixNano()))
-		case slayers.IdIntIEgressTstamp:
+		case idint.InEgBrIfRxPkts:
 			meta.SetDataUint48(i, uint64(s.metrics.ingressPkts))
-		case slayers.IdIntIEgPktCnt:
+		case idint.InEgBrIfTxPkts:
 			meta.SetDataUint48(i, uint64(s.metrics.egressPkts))
-		case slayers.IdIntIIgBytes:
-			meta.SetDataUint48(i, uint64(s.metrics.ingressBytes))
-		case slayers.IdIntIEgBytes:
-			meta.SetDataUint48(i, uint64(s.metrics.egressBytes))
-		case slayers.IdIntIZero8:
-			meta.SetDataUint64(i, 0)
-		case slayers.IdIntINodeIpv6AddrH:
+		case idint.InNodeIpv6AddrH:
 			if s.Local.Addr().Is6() {
 				meta.SetDataUint64(i, binary.BigEndian.Uint64((s.Local.Addr().AsSlice())))
 			}
-		case slayers.IdIntINodeIpv6AddrL:
+		case idint.InNodeIpv6AddrL:
 			if s.Local.Addr().Is6() {
 				meta.SetDataUint64(i, binary.BigEndian.Uint64((s.Local.Addr().AsSlice()[8:])))
 			}

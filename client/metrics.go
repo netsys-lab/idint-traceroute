@@ -19,7 +19,7 @@ import (
 
 	"github.com/scionproto/scion/pkg/addr"
 	"github.com/scionproto/scion/pkg/private/serrors"
-	"github.com/scionproto/scion/pkg/slayers"
+	"github.com/scionproto/scion/pkg/slayers/idint"
 	"github.com/scionproto/scion/pkg/snet"
 )
 
@@ -39,7 +39,7 @@ type LinkLatency struct {
 }
 
 func (*LinkLatency) AddInstr(reqBitmap *int, instr []uint8) error {
-	if err := addInstr(instr, []uint8{slayers.IdIntIIngressTstamp}); err != nil {
+	if err := addInstr(instr, []uint8{idint.InIngressTstamp}); err != nil {
 		return err
 	}
 	return nil
@@ -53,7 +53,7 @@ func (*LinkLatency) Compute(report *snet.IntReport, ia addr.IA, i int, fwd bool)
 	if i+1 >= len(report.Data) {
 		return "               "
 	}
-	ts := findIndex(report.Instructions[:], slayers.IdIntIIngressTstamp)
+	ts := findIndex(report.Instructions[:], idint.InIngressTstamp)
 	if report.Data[i].DataLength(ts) != 6 || report.Data[i+1].DataLength(ts) != 6 {
 		return "               "
 	}
@@ -72,8 +72,8 @@ type IPG struct {
 }
 
 func (*IPG) AddInstr(reqBitmap *int, instr []uint8) error {
-	*reqBitmap |= int(slayers.IdIntNodeId)
-	if err := addInstr(instr, []uint8{slayers.IdIntIIngressTstamp}); err != nil {
+	*reqBitmap |= int(idint.NodeId)
+	if err := addInstr(instr, []uint8{idint.InIngressTstamp}); err != nil {
 		return err
 	}
 	return nil
@@ -107,7 +107,7 @@ func (m *IPG) Compute(report *snet.IntReport, ia addr.IA, i int, fwd bool) strin
 			m.revSrcTS = report.SourceTS
 		}
 	} else {
-		ts := findIndex(report.Instructions[:], slayers.IdIntIIngressTstamp)
+		ts := findIndex(report.Instructions[:], idint.InIngressTstamp)
 		data := &report.Data[i]
 		if !data.HasNodeId() || data.DataLength(ts) != 6 {
 			return "               "
@@ -136,8 +136,8 @@ type RxBitRate struct {
 }
 
 func (*RxBitRate) AddInstr(reqBitmap *int, instr []uint8) error {
-	*reqBitmap |= int(slayers.IdIntNodeId)
-	add := []uint8{slayers.IdIntIIngressTstamp, slayers.IdIntIIgScifBytes}
+	*reqBitmap |= int(idint.NodeId)
+	add := []uint8{idint.InIngressTstamp, idint.InIgBrIfRxBytes}
 	if err := addInstr(instr, add); err != nil {
 		return err
 	}
@@ -153,8 +153,8 @@ func (m *RxBitRate) Compute(report *snet.IntReport, ia addr.IA, i int, fwd bool)
 		m.lastValues = make(map[IntNode]TSCounter)
 	}
 
-	ts := findIndex(report.Instructions[:], slayers.IdIntIIngressTstamp)
-	counter := findIndex(report.Instructions[:], slayers.IdIntIIgScifBytes)
+	ts := findIndex(report.Instructions[:], idint.InIngressTstamp)
+	counter := findIndex(report.Instructions[:], idint.InIgBrIfRxBytes)
 	data := &report.Data[i]
 	if !data.HasNodeId() || data.DataLength(ts) != 6 || data.DataLength(counter) != 6 {
 		return "               "
@@ -186,8 +186,8 @@ type TxBitRate struct {
 }
 
 func (*TxBitRate) AddInstr(reqBitmap *int, instr []uint8) error {
-	*reqBitmap |= int(slayers.IdIntNodeId)
-	add := []uint8{slayers.IdIntIIngressTstamp, slayers.IdIntIEgScifBytes}
+	*reqBitmap |= int(idint.NodeId)
+	add := []uint8{idint.InIngressTstamp, idint.InEgBrIfTxBytes}
 	if err := addInstr(instr, add); err != nil {
 		return err
 	}
@@ -203,8 +203,8 @@ func (m *TxBitRate) Compute(report *snet.IntReport, ia addr.IA, i int, fwd bool)
 		m.lastValues = make(map[IntNode]TSCounter)
 	}
 
-	ts := findIndex(report.Instructions[:], slayers.IdIntIIngressTstamp)
-	counter := findIndex(report.Instructions[:], slayers.IdIntIEgScifBytes)
+	ts := findIndex(report.Instructions[:], idint.InIngressTstamp)
+	counter := findIndex(report.Instructions[:], idint.InEgBrIfTxBytes)
 	data := &report.Data[i]
 	if !data.HasNodeId() || data.DataLength(ts) != 6 || data.DataLength(counter) != 6 {
 		return "               "
@@ -238,7 +238,7 @@ func addInstr(instructions []uint8, required []uint8) error {
 			if instr == add {
 				found = true
 				break
-			} else if free < 0 && instr == slayers.IdIntINop {
+			} else if free < 0 && instr == idint.InNop {
 				free = i
 			}
 		}

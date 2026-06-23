@@ -5,22 +5,50 @@ This tool sends an empty UDP packet with an ID-INT header from a client to a ser
 responds with a UDP packet containing a fresh ID-INT header and the original ID-INT header from the
 client as payload.
 
+Use with this [fork of SCION](https://github.com/lschulz/scion/tree/idint2026).
+
+To build just run `go build`.
+
+## Usage
+Run the server in one AS
+```bash
+./idint-traceroute --sciond [fd00:f00d:cafe::7f00:54]:30255 --local [fd00:f00d:cafe::7f00:53]:32001
+```
+
+and the client in another
+```bash
+./idint-traceroute -sciond 127.0.0.60:30255 -local 127.0.0.1:32000 \
+  -remote 2-ff00:0:222,[fd00:f00d:cafe::7f00:53]:32001 -encrypt \
+  -nid -inst0 RTT_NEXT_BR --inst1 EGRESS_LINK_TX -inst2 INGRESS_TSTAMP -inst3 INST_QUEUE_LEN
+```
+
+If idint-traceroute can't key keys, make sure the `local` address in the command above matches
+the address the SCION daemon (which idint-traceroute uses) responsible for the AS you want to run
+id-int-traceroute in.
+
+If the border routes can't get level 1 keys, make sure their IPs are allows for `idint` keys in the
+`drkey.delegation` section of the control service configuration.
+
+To select the path and run continuously use the `-i` (interactive) switch. Also see
+`./idint-traceroute -h`.
+
 Example output:
 ```
-Source: 127.0.0.1:32000 Dest: 1-ff00:0:112,127.0.0.1:32001
-Hops: [1-ff00:0:111 2>2 1-ff00:0:110 3>1 1-ff00:0:112] MTU: 1400 NextHop: 127.0.0.26:31008
-
 Forward:
-  Flags      Source AS NodeID        Latency            IPG      RxBitRate IngressLinkRx  InstQueueLen IngressTstamp   IgScifBytes
- S ---C   1-ff00:0:111      -                     999.637ms                            -             -             -             -
- 0 -E-C   1-ff00:0:111      2       91.160µs      -58.970µs     54.679Mbps        54.63%             3  aea0deed35be     953021074
- 1 IE-C   1-ff00:0:110      1       59.250µs      -32.324µs     54.677Mbps        54.63%             3  aea0deee99d6     953306813
- 3 I--C   1-ff00:0:112      1                     -35.649µs     54.680Mbps        54.58%             3  aea0deef8148     956082805
+  Flags      Source AS NodeID     RttNextBr  EgressLinkTx IngressTstamp  InstQueueLen
+ S ---C   1-ff00:0:112      -             -             -             -             -
+ 0 -E-C   1-ff00:0:112      2         0.243         7.84%  c381a0fe2c0d             0
+ 1 I--C   1-ff00:0:111      2         0.344         0.09%  c381a1020876             0
+ 1 -E-C   1-ff00:0:111      1         0.258         0.01%  c381a111faf0             0
+ 2 IE-C   2-ff00:0:211      1         0.211         0.22%  c381a11446f3             0
+ 3 I--C   2-ff00:0:222      1             -         0.22%  c381a116e7b2             0
 
 Reverse:
-  Flags      Source AS NodeID        Latency            IPG      RxBitRate IngressLinkRx  InstQueueLen IngressTstamp   IgScifBytes
- S ---C   1-ff00:0:112      -      103.369µs      999.583ms                        0.00%             -  aea0def11fa8             -
- 0 -E-C   1-ff00:0:112      1      121.630µs        3.636µs     54.677Mbps        54.68%             1  aea0def2b371     952822237
- 1 IE-C   1-ff00:0:110      1       59.220µs       30.757µs     54.675Mbps        54.69%             1  aea0def48e8f     953240953
- 3 I--C   1-ff00:0:111      2                      10.759µs     54.679Mbps        54.72%             3  aea0def575e3     955966305
+  Flags      Source AS NodeID     RttNextBr  EgressLinkTx IngressTstamp  InstQueueLen
+ S ---C   2-ff00:0:222      -             -         0.00%  c381a11a6007             -
+ 0 -E-C   2-ff00:0:222      1         0.272         0.00%  c381a11b87bb             0
+ 1 IE-C   2-ff00:0:211      1         0.300         0.02%  c381a11db835             0
+ 2 I--C   1-ff00:0:111      1         0.290         0.06%  c381a1200a6f             0
+ 2 -E-C   1-ff00:0:111      2         0.321         0.24%  c381a121acf5             0
+ 3 I--C   1-ff00:0:112      2             -         0.00%  c381a1251ed7             0
 ```

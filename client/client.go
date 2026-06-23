@@ -30,9 +30,10 @@ import (
 
 	"github.com/lschulz/idint-traceroute/shared"
 	"github.com/scionproto/scion/pkg/addr"
-	"github.com/scionproto/scion/pkg/daemon"
+	daemon_types "github.com/scionproto/scion/pkg/daemon/types"
 	"github.com/scionproto/scion/pkg/private/serrors"
 	"github.com/scionproto/scion/pkg/slayers"
+	"github.com/scionproto/scion/pkg/slayers/idint"
 	scion "github.com/scionproto/scion/pkg/slayers/path/scion"
 	"github.com/scionproto/scion/pkg/snet"
 	spath "github.com/scionproto/scion/pkg/snet/path"
@@ -78,7 +79,7 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 	c.conn, err = c.Network.Snet.OpenRaw(ctx, &localUdpAddr)
 	if err != nil {
-		return serrors.WrapStr("connection failed", err)
+		return serrors.Wrap("connection failed", err)
 	}
 	defer c.conn.Close()
 
@@ -91,7 +92,7 @@ func (c *Client) Run(ctx context.Context) error {
 	for {
 		<-ticker.C
 		if err := c.sendProbe(ctx, path); err != nil {
-			return serrors.WrapStr("sending probe failed", err)
+			return serrors.Wrap("sending probe failed", err)
 		}
 		if err := c.receiveResponse(ctx, path); err != nil {
 			fmt.Println(err)
@@ -103,7 +104,8 @@ func (c *Client) Run(ctx context.Context) error {
 }
 
 func (c *Client) selectPath(ctx context.Context, dest addr.IA) snet.Path {
-	paths, err := c.Network.Sciond.Paths(ctx, dest, c.Network.LocalIA, daemon.PathReqFlags{})
+	flags := daemon_types.PathReqFlags{}
+	paths, err := c.Network.Sciond.Paths(ctx, dest, c.Network.LocalIA, flags)
 
 	if err != nil || len(paths) == 0 {
 		fmt.Println("No paths to destination")
@@ -145,7 +147,7 @@ func (c *Client) sendProbe(ctx context.Context, via snet.Path) error {
 	}
 	key, err := c.KeyCache.GetHostHostKey(ctx, validity, self, self)
 	if err != nil {
-		return serrors.WrapStr("getting host-host key", err)
+		return serrors.Wrap("getting host-host key", err)
 	}
 
 	var payload []byte
@@ -159,6 +161,7 @@ func (c *Client) sendProbe(ctx context.Context, via snet.Path) error {
 		hdrLen := 512 // TODO: Get the length of SCION headers + path
 		maxStackLen = (int(via.Metadata().MTU) - hdrLen) / 2
 	}
+	maxStackLen = (maxStackLen + 3) & ^3 // round up to a multiple of 4
 
 	pkt := &snet.Packet{
 		Bytes: nil,
@@ -181,17 +184,17 @@ func (c *Client) sendProbe(ctx context.Context, via snet.Path) error {
 				Encrypt:         c.Config.Encrypt,
 				SkipHops:        c.Config.SkipHops,
 				MaxStackLen:     maxStackLen,
-				ReqNodeId:       c.Config.ReqBitmap&int(slayers.IdIntNodeId) != 0,
-				ReqNodeCount:    c.Config.ReqBitmap&int(slayers.IdIntNodeCnt) != 0,
-				ReqIngressIf:    c.Config.ReqBitmap&int(slayers.IdIntIgrIf) != 0,
-				ReqEgressIf:     c.Config.ReqBitmap&int(slayers.IdIntEgrIf) != 0,
+				ReqNodeId:       c.Config.ReqBitmap&int(idint.NodeId) != 0,
+				ReqNodeCount:    c.Config.ReqBitmap&int(idint.NodeCnt) != 0,
+				ReqIgPort:       c.Config.ReqBitmap&int(idint.IgPort) != 0,
+				ReqEgPort:       c.Config.ReqBitmap&int(idint.EgPort) != 0,
 				AggregationMode: c.Config.AggregationMode,
 				AggregationFunc: c.Config.AggregationFunc,
 				Instructions:    c.Config.Instructions,
-				Verifier:        slayers.IdIntVerifSrc,
-				SourceMetadata:  snet.IntHop{},
+				Verifier:        idint.VfSrc,
+				SourceMetadata:  snet.IntMetadata{},
 				SourceTS:        validity,
-				SourceKey:       key,
+				SourceKey:       (slayers.IdIntKey)(key),
 			}},
 		},
 	}
@@ -236,8 +239,8 @@ func (c *Client) decodeProbe(
 		return nil, nil, serrors.New("non-UDP packet received")
 	}
 	rawFwd := snet.RawIntReport{}
-	if err := rawFwd.DecodeFromBytes(udp.Payload); err != nil {
-		return nil, nil, serrors.WrapStr("decoding probe payload", err)
+	if err := rawFwd.ParseFromSlice(udp.Payload); err != nil {
+		return nil, nil, serrors.Wrap("decoding probe payload", err)
 	}
 	fwd := &snet.IntReport{}
 	if c.Config.NoVerify {
@@ -246,7 +249,7 @@ func (c *Client) decodeProbe(
 		err = rawFwd.VerifyAndDecrypt(ctx, fwd, pkt.PacketInfo.Destination, &c.KeyCache, fwdPathMeta(path))
 	}
 	if err != nil {
-		return nil, nil, serrors.WrapStr("decoding forward path", err)
+		return nil, nil, serrors.Wrap("decoding forward path", err)
 	}
 
 	// Parse and validate ID-INT report from header
@@ -258,7 +261,7 @@ func (c *Client) decodeProbe(
 		err = rawRev.VerifyAndDecrypt(ctx, rev, pkt.PacketInfo.Source, &c.KeyCache, revPathMeta(path))
 	}
 	if err != nil {
-		return nil, nil, serrors.WrapStr("decoding reverse path", err)
+		return nil, nil, serrors.Wrap("decoding reverse path", err)
 	}
 
 	return fwd, rev, nil
@@ -290,17 +293,17 @@ func (c *Client) printTelemetry(report *snet.IntReport, hopToIA snet.HopToIA, fw
 	var (
 		hasNodeId    bool
 		hasNodeCount bool
-		hasIngressIf bool
-		hasEgressIf  bool
+		hasIgPort    bool
+		hasEgPort    bool
 		hasData      [4]bool
 	)
 	for i := range report.Data {
 		hop := &report.Data[i]
 		hasNodeId = hasNodeId || hop.HasNodeId()
 		hasNodeCount = hasNodeCount || hop.HasNodeCount()
-		hasIngressIf = hasIngressIf || hop.HasIngressIf()
-		hasEgressIf = hasEgressIf || hop.HasEgressIf()
-		for i := 0; i < 4; i++ {
+		hasIgPort = hasIgPort || hop.HasIngressPort()
+		hasEgPort = hasEgPort || hop.HasEgressPort()
+		for i := range 4 {
 			hasData[i] = hasData[i] || (hop.DataLength(i) > 0)
 		}
 	}
@@ -311,11 +314,11 @@ func (c *Client) printTelemetry(report *snet.IntReport, hopToIA snet.HopToIA, fw
 	if hasNodeCount {
 		fmt.Print(" Cnt")
 	}
-	if hasIngressIf {
-		fmt.Print("  IgrIF")
+	if hasIgPort {
+		fmt.Print("  IgPort")
 	}
-	if hasEgressIf {
-		fmt.Print("  EgrIF")
+	if hasEgPort {
+		fmt.Print("  EgPort")
 	}
 	for _, m := range c.Config.DerivedMetrics {
 		fmt.Print(m.Header())
@@ -378,14 +381,14 @@ func (c *Client) printTelemetry(report *snet.IntReport, hopToIA snet.HopToIA, fw
 		} else if hasNodeCount {
 			fmt.Print("   -")
 		}
-		if hop.HasIngressIf() {
-			fmt.Printf(" %6v", hop.IngressIf)
-		} else if hasIngressIf {
+		if hop.HasIngressPort() {
+			fmt.Printf(" %6v", hop.IngressPort)
+		} else if hasIgPort {
 			fmt.Print("      -")
 		}
-		if hop.HasEgressIf() {
-			fmt.Printf(" %6v", hop.EgressIf)
-		} else if hasEgressIf {
+		if hop.HasEgressPort() {
+			fmt.Printf(" %6v", hop.EgressPort)
+		} else if hasEgPort {
 			fmt.Print("      -")
 		}
 		for _, m := range c.Config.DerivedMetrics {
@@ -547,17 +550,22 @@ func formatBps(bps float64) string {
 
 func fmtMetaValue(instr uint8, value uint64) string {
 	switch instr {
-	case slayers.IdIntIIngressTstamp:
+	case idint.InRttNextBr:
 		fallthrough
-	case slayers.IdIntIEgressTstamp:
+	case idint.InRttPrevBr:
+		return fmt.Sprintf("%14.3f", 1e-3*float64(value))
+
+	case idint.InIngressTstamp:
+		fallthrough
+	case idint.InEgressTstamp:
 		return fmt.Sprintf("%14x", value)
 
-	case slayers.IdIntIIngressLinkRx:
+	case idint.InIngressLinkRx:
 		fallthrough
-	case slayers.IdIntIEgressLinkTx:
+	case idint.InEgressLinkTx:
 		return fmt.Sprintf("%13.2f%%", 100.0*float64(value)/float64(^uint32(0)))
 
-	case slayers.IdIntIAsn:
+	case idint.InAsn:
 		return fmt.Sprintf("%14v", addr.AS(value))
 
 	default:
