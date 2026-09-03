@@ -549,6 +549,9 @@ func formatBps(bps float64) string {
 }
 
 func fmtMetaValue(instr uint8, value uint64) string {
+	if instr >= idint.InCpuUserNow && instr <= idint.InHostCpuSoftIrq5Min {
+		return fmt.Sprintf("%13.2f%%", (100.0/65535)*float64(value))
+	}
 	switch instr {
 	case idint.InRttNextBr:
 		fallthrough

@@ -183,28 +183,6 @@ func (s *Server) setSourceMetadata(instr [4]uint8, meta *snet.IntMetadata) {
 		switch instr[i] {
 		case idint.InIsd:
 			meta.SetDataUint16(i, uint16(s.Network.LocalIA.ISD()))
-		case idint.InBrLinkType:
-			meta.SetDataUint16(i, 0)
-		case idint.InDeviceTypeRole:
-			meta.SetDataUint16(i, 0)
-		case idint.InCpuMemUsage:
-			meta.SetDataUint16(i, 0)
-		case idint.InCpuTemp:
-			meta.SetDataUint16(i, 0)
-		case idint.InAsicTemp:
-			meta.SetDataUint16(i, 0)
-		case idint.InFanSpeed:
-			meta.SetDataUint16(i, 0)
-		case idint.InTotalPower:
-			meta.SetDataUint16(i, 0)
-		case idint.InEnergyMix:
-			meta.SetDataUint16(i, 0)
-		case idint.InDeviceVendor:
-			meta.SetDataUint32(i, 0)
-		case idint.InDeviceModel:
-			meta.SetDataUint32(i, 0)
-		case idint.InSoftwareVersion:
-			meta.SetDataUint32(i, 0)
 		case idint.InNodeIpv4Addr:
 			meta.SetDataUint32(i, binary.BigEndian.Uint32(s.Local.Addr().AsSlice()))
 		case idint.InIngressPortSpeed:
@@ -217,10 +195,6 @@ func (s *Server) setSourceMetadata(instr [4]uint8, meta *snet.IntMetadata) {
 			meta.SetDataUint32(i, math.Float32bits(11.646005))
 		case idint.InUptime:
 			meta.SetDataUint32(i, uint32(time.Since(s.metrics.startTime).Seconds()))
-		case idint.InIngressLinkRx:
-			meta.SetDataUint32(i, 0)
-		case idint.InEgressLinkTx:
-			meta.SetDataUint32(i, 0)
 		case idint.InAsn:
 			meta.SetDataUint48(i, uint64(s.Network.LocalIA.AS()))
 		case idint.InIngressTstamp:
